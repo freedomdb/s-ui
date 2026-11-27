@@ -109,7 +109,7 @@ print(json.dumps({"id": 0, "enable": True, "name": "smoke",
     "tuic": {"name": "smoke", "uuid": uuid, "password": "smoke-pass-123"},
     "vmess": {"name": "smoke", "uuid": uuid, "alterId": 0},
     "trojan": {"name": "smoke", "password": "smoke-pass-123"},
-    "shadowsocks": {"name": "smoke", "password": sspw}},
+    "shadowsocks16": {"name": "smoke", "password": sspw}},
   "inbounds": ids, "links": []}))
 EOF
 echo "SMOKE save client: $(curl -s -b $JAR -X POST $BASE/api/save -H "$XHDR" \
