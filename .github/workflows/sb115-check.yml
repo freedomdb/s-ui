@@ -1,0 +1,74 @@
+name: sing-box compat check
+
+# Throwaway compatibility probe (test branch only): bump the sing-box core to
+# a version s-ui does not ship yet, then build, test, boot the panel and push
+# real traffic through it. Every stage is best-effort and logs to a file, so a
+# single run collects all the breakage instead of stopping at the first one.
+
+on:
+  push:
+    branches: [test/sb115]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: sing-box ${{ matrix.sb_version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        sb_version: [v1.15.0-alpha.14, v1.14.5]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Bump sing-box
+        run: |
+          go get github.com/sagernet/sing-box@${{ matrix.sb_version }} 2>&1 | tee bump.log
+          go mod tidy 2>&1 | tee -a bump.log
+          grep 'sagernet/sing-box ' go.mod | tee -a bump.log
+
+      - name: Build all packages
+        run: |
+          go build ./... 2>&1 | tee build.log
+          echo "build exit: ${PIPESTATUS[0]}" | tee -a build.log
+
+      - name: Unit tests
+        run: |
+          go test ./... 2>&1 | tee test.log
+          echo "test exit: ${PIPESTATUS[0]}" | tee -a test.log
+
+      - name: Build panel binary
+        run: |
+          . ./build-tags.sh
+          go build -tags "$(tags_for test)" -ldflags "$(ldflags_for test)" -o sui . 2>&1 | tee binbuild.log
+          echo "binary build exit: ${PIPESTATUS[0]}" | tee -a binbuild.log
+          ls -la sui || true
+
+      - name: Boot panel and push traffic through an AnyTLS inbound
+        env:
+          SB_VERSION: ${{ matrix.sb_version }}
+        run: bash .github/scripts/sb115-smoke.sh 2>&1 | tee smoke.log
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sb-check-${{ matrix.sb_version }}
+          path: |
+            bump.log
+            build.log
+            test.log
+            binbuild.log
+            smoke.log
+            run/
+          if-no-files-found: ignore
