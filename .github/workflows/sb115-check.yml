@@ -24,12 +24,28 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          submodules: true
 
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "26"
+
+      # The panel binary embeds the built frontend from web/html (see
+      # build.sh); without it the panel exits at startup with
+      # "template: pattern matches no files: `html/index.html`".
+      - name: Build frontend into web/html
+        run: |
+          cd frontend && npm ci && npm run build
+          mkdir -p ../web/html && rm -rf ../web/html/* && cp -R dist/* ../web/html/
+          ls ../web/html | head
 
       - name: Bump sing-box
         run: |
@@ -57,7 +73,9 @@ jobs:
       - name: Boot panel and push traffic through an AnyTLS inbound
         env:
           SB_VERSION: ${{ matrix.sb_version }}
-        run: bash .github/scripts/sb115-smoke.sh 2>&1 | tee smoke.log
+        run: |
+          bash .github/scripts/sb115-smoke.sh 2>&1 | tee smoke.log
+          { echo "## sing-box ${{ matrix.sb_version }} smoke"; grep SMOKE smoke.log; } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload logs
         if: always()
