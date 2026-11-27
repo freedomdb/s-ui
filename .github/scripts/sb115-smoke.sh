@@ -38,10 +38,22 @@ XHDR="X-Requested-With: XMLHttpRequest"
 echo "SMOKE login: $(curl -s -c $JAR -X POST $BASE/api/login -H "$XHDR" -d 'user=admin&pass=admin')"
 echo "SMOKE status: $(curl -s -b $JAR $BASE/api/status)"
 
+# TLS is a separate record in this panel; inbounds point at it by id.
+cat > tls-data.json <<EOF
+{"id":0,"name":"smoke","server":{"enabled":true,"server_name":"localhost","certificate_path":"$CERT","key_path":"$KEY"},"client":{"enabled":true,"server_name":"localhost","insecure":true}}
+EOF
+echo "SMOKE save tls: $(curl -s -b $JAR -X POST $BASE/api/save -H "$XHDR" \
+  --data-urlencode object=tls --data-urlencode action=new \
+  --data-urlencode data@tls-data.json)"
+curl -s -b $JAR $BASE/api/tls > tls.json
+TLS_ID=$(python3 -c 'import json; d=json.load(open("tls.json")); o=(d.get("obj") or {}).get("tls") or []; print([t["id"] for t in o if t.get("name")=="smoke"][-1] if o else 0)' 2>/dev/null || echo 0)
+echo "SMOKE tls id: $TLS_ID"
+
 # Build all inbound payloads in one go.
-python3 - "$CERT" "$KEY" "$UUID" "$SSPW" <<'EOF'
+python3 - "$CERT" "$KEY" "$UUID" "$SSPW" "$TLS_ID" <<'EOF'
 import json
 cert, key, uuid, sspw = __import__("sys").argv[1:5]
+tls_id = int(__import__("sys").argv[5])
 tls = {"enabled": True, "server_name": "localhost", "certificate_path": cert, "key_path": key}
 try:
     scheme = json.load(open("../scheme.json"))
@@ -54,22 +66,24 @@ except Exception:
 print("SMOKE padding scheme source:", src)
 inbounds = [
   {"id": 0, "type": "anytls", "tag": "anytls", "enable": True, "tls_id": 0,
-   "listen": "127.0.0.1", "listen_port": 23456, "padding_scheme": scheme, "tls": tls},
+   "listen": "127.0.0.1", "listen_port": 23456, "padding_scheme": scheme},
   {"id": 0, "type": "vless", "tag": "vless", "enable": True, "tls_id": 0,
-   "listen": "127.0.0.1", "listen_port": 23457, "tls": tls},
+   "listen": "127.0.0.1", "listen_port": 23457},
   {"id": 0, "type": "hysteria2", "tag": "hysteria2", "enable": True, "tls_id": 0,
-   "listen": "127.0.0.1", "listen_port": 23458, "tls": tls},
+   "listen": "127.0.0.1", "listen_port": 23458},
   {"id": 0, "type": "tuic", "tag": "tuic", "enable": True, "tls_id": 0,
-   "listen": "127.0.0.1", "listen_port": 23459, "congestion_control": "cubic", "tls": tls},
+   "listen": "127.0.0.1", "listen_port": 23459, "congestion_control": "cubic"},
   {"id": 0, "type": "vmess", "tag": "vmess", "enable": True, "tls_id": 0,
    "listen": "127.0.0.1", "listen_port": 23460},
   {"id": 0, "type": "trojan", "tag": "trojan", "enable": True, "tls_id": 0,
-   "listen": "127.0.0.1", "listen_port": 23461, "tls": tls},
+   "listen": "127.0.0.1", "listen_port": 23461},
   {"id": 0, "type": "shadowsocks", "tag": "shadowsocks", "enable": True, "tls_id": 0,
    "listen": "127.0.0.1", "listen_port": 23462,
    "method": "2022-blake3-aes-128-gcm", "password": sspw},
 ]
 for ib in inbounds:
+    if ib["type"] in ("anytls", "vless", "hysteria2", "tuic", "trojan"):
+        ib["tls_id"] = tls_id
     json.dump(ib, open(f"inbound-{ib['tag']}.json", "w"))
 json.dump({"uuid": uuid, "sspw": sspw}, open("creds.json", "w"))
 EOF
@@ -81,7 +95,7 @@ for tag in anytls vless hysteria2 tuic vmess trojan shadowsocks; do
 done
 
 curl -s -b $JAR $BASE/api/inbounds > inbounds.json
-IDS=$(python3 -c 'import json; d=json.load(open("inbounds.json")); o=d.get("obj") or []; print(json.dumps([x["id"] for x in o]))' 2>/dev/null || echo "[]")
+IDS=$(python3 -c 'import json; d=json.load(open("inbounds.json")); o=(d.get("obj") or {}).get("inbounds") or []; print(json.dumps([x["id"] for x in o]))' 2>/dev/null || echo "[]")
 echo "SMOKE inbound ids: $IDS"
 
 python3 - "$UUID" "$SSPW" "$IDS" <<'EOF' > client-data.json
@@ -96,7 +110,7 @@ print(json.dumps({"id": 0, "enable": True, "name": "smoke",
     "vmess": {"name": "smoke", "uuid": uuid, "alterId": 0},
     "trojan": {"name": "smoke", "password": "smoke-pass-123"},
     "shadowsocks": {"name": "smoke", "password": sspw}},
-  "inbounds": ids}))
+  "inbounds": ids, "links": []}))
 EOF
 echo "SMOKE save client: $(curl -s -b $JAR -X POST $BASE/api/save -H "$XHDR" \
   --data-urlencode object=clients --data-urlencode action=new \
@@ -108,9 +122,9 @@ for p in 23456 23457 23458 23459 23460 23461 23462; do
   if ss -tuln | grep -q ":$p "; then echo "SMOKE port $p listening: yes"; else echo "SMOKE port $p listening: NO"; fi
 done
 
-curl -s -b $JAR $BASE/api/config > config.json
-echo "SMOKE generated inbounds in core config:"
-python3 -c 'import json; d=json.load(open("config.json")); c=d.get("obj") or {}; [print("  ", i.get("type"), i.get("tag"), "users:", len(i.get("users", [])), "padding:", bool(i.get("padding_scheme"))) for i in c.get("inbounds", [])]' 2>/dev/null || head -c 400 config.json
+curl -s -b $JAR $BASE/api/inbounds > inbounds-after.json
+echo "SMOKE inbounds after client + restart (users attached):"
+python3 -c 'import json; d=json.load(open("inbounds-after.json")); o=(d.get("obj") or {}).get("inbounds") or []; [print("  ", i.get("type"), i.get("tag"), "tls_id:", i.get("tls_id"), "users:", i.get("users")) for i in o]' 2>/dev/null || head -c 400 inbounds-after.json
 echo
 
 # Standalone client of the same core version; one tunnel per protocol.
