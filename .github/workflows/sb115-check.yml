@@ -20,7 +20,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        sb_version: [v1.14.4]
+        sb_version: [v1.14.5]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -41,9 +41,29 @@ jobs:
       # The panel binary embeds the built frontend from web/html (see
       # build.sh); without it the panel exits at startup with
       # "template: pattern matches no files: `html/index.html`".
+      # The frontend is OUR padding-scheme branch (the Default/Random switch
+      # from s-ui-frontend PR #237), not upstream's: this run tests our
+      # change too. Its unit tests run here, and one scheme rolled by the
+      # real generator is written to scheme.json for the smoke script.
       - name: Build frontend into web/html
         run: |
-          cd frontend && npm ci && npm run build
+          cd frontend
+          git remote add fork https://github.com/freedomdb/s-ui-frontend.git 2>/dev/null || true
+          git fetch fork feat/anytls-padding-scheme-switch
+          git checkout fork/feat/anytls-padding-scheme-switch
+          npm ci
+          npx vitest run src/plugins/paddingScheme.test.ts 2>&1 | tee ../padding-test.log
+          cat > gen-scheme.test.ts <<'EOF'
+          import { writeFileSync } from 'node:fs'
+          import { test } from 'vitest'
+          import { generatePaddingScheme } from './src/plugins/paddingScheme'
+          test('roll one scheme for the smoke run', () => {
+            writeFileSync('../scheme.json', JSON.stringify(generatePaddingScheme()))
+          })
+          EOF
+          npx vitest run gen-scheme.test.ts
+          cat ../scheme.json
+          npm run build
           mkdir -p ../web/html && rm -rf ../web/html/* && cp -R dist/* ../web/html/
           ls ../web/html | head
 
@@ -88,5 +108,7 @@ jobs:
             test.log
             binbuild.log
             smoke.log
+            padding-test.log
+            scheme.json
             run/
           if-no-files-found: ignore
