@@ -34,7 +34,8 @@ echo "SMOKE panel reachable: ${ok:-NO}"
 curl -s -o /dev/null -w "SMOKE panel page HTTP %{http_code}\n" "$BASE/"
 
 JAR=cookies.txt
-echo "SMOKE login: $(curl -s -c $JAR -X POST $BASE/api/login -d 'user=admin&pass=admin')"
+XHDR="X-Requested-With: XMLHttpRequest"
+echo "SMOKE login: $(curl -s -c $JAR -X POST $BASE/api/login -H "$XHDR" -d 'user=admin&pass=admin')"
 echo "SMOKE status: $(curl -s -b $JAR $BASE/api/status)"
 
 # Build all inbound payloads in one go.
@@ -74,7 +75,7 @@ json.dump({"uuid": uuid, "sspw": sspw}, open("creds.json", "w"))
 EOF
 
 for tag in anytls vless hysteria2 tuic vmess trojan shadowsocks; do
-  echo "SMOKE save inbound $tag: $(curl -s -b $JAR -X POST $BASE/api/save \
+  echo "SMOKE save inbound $tag: $(curl -s -b $JAR -X POST $BASE/api/save -H "$XHDR" \
     --data-urlencode object=inbounds --data-urlencode action=new \
     --data-urlencode data@inbound-$tag.json)"
 done
@@ -97,11 +98,11 @@ print(json.dumps({"id": 0, "enable": True, "name": "smoke",
     "shadowsocks": {"name": "smoke", "password": sspw}},
   "inbounds": ids}))
 EOF
-echo "SMOKE save client: $(curl -s -b $JAR -X POST $BASE/api/save \
+echo "SMOKE save client: $(curl -s -b $JAR -X POST $BASE/api/save -H "$XHDR" \
   --data-urlencode object=clients --data-urlencode action=new \
   --data-urlencode data@client-data.json)"
 
-echo "SMOKE restartSb: $(curl -s -b $JAR -X POST $BASE/api/restartSb)"
+echo "SMOKE restartSb: $(curl -s -b $JAR -X POST $BASE/api/restartSb -H "$XHDR")"
 sleep 3
 for p in 23456 23457 23458 23459 23460 23461 23462; do
   if ss -tuln | grep -q ":$p "; then echo "SMOKE port $p listening: yes"; else echo "SMOKE port $p listening: NO"; fi
