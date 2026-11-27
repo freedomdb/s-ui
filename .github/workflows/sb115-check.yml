@@ -53,15 +53,16 @@ jobs:
           git checkout fork/feat/anytls-padding-scheme-switch
           npm ci
           npx vitest run src/plugins/paddingScheme.test.ts 2>&1 | tee ../padding-test.log
-          cat > gen-scheme.test.ts <<'EOF'
+          cat > src/gen-scheme.test.ts <<'EOF'
           import { writeFileSync } from 'node:fs'
           import { test } from 'vitest'
-          import { generatePaddingScheme } from './src/plugins/paddingScheme'
+          import { generatePaddingScheme } from './plugins/paddingScheme'
           test('roll one scheme for the smoke run', () => {
             writeFileSync('../scheme.json', JSON.stringify(generatePaddingScheme()))
           })
           EOF
-          npx vitest run gen-scheme.test.ts
+          npx vitest run src/gen-scheme.test.ts
+          rm src/gen-scheme.test.ts
           cat ../scheme.json
           npm run build
           mkdir -p ../web/html && rm -rf ../web/html/* && cp -R dist/* ../web/html/
