@@ -154,7 +154,7 @@ if [ -x ./sing-box ]; then
   run_proto tuic 23459 "{\"type\": \"tuic\", \"tag\": \"out\", \"server\": \"127.0.0.1\", \"server_port\": 23459, \"uuid\": \"$UUID\", \"password\": \"smoke-pass-123\", \"congestion_control\": \"cubic\", $TLSCLI}"
   run_proto vmess 23460 "{\"type\": \"vmess\", \"tag\": \"out\", \"server\": \"127.0.0.1\", \"server_port\": 23460, \"uuid\": \"$UUID\", \"alter_id\": 0, \"security\": \"auto\"}"
   run_proto trojan 23461 "{\"type\": \"trojan\", \"tag\": \"out\", \"server\": \"127.0.0.1\", \"server_port\": 23461, \"password\": \"smoke-pass-123\", $TLSCLI}"
-  run_proto shadowsocks 23462 "{\"type\": \"shadowsocks\", \"tag\": \"out\", \"server\": \"127.0.0.1\", \"server_port\": 23462, \"method\": \"2022-blake3-aes-128-gcm\", \"password\": \"$SSPW\"}"
+  run_proto shadowsocks 23462 "{\"type\": \"shadowsocks\", \"tag\": \"out\", \"server\": \"127.0.0.1\", \"server_port\": 23462, \"method\": \"2022-blake3-aes-128-gcm\", \"password\": \"$SSPW:$SSPW\"}"
 else
   echo "SMOKE: standalone sing-box download failed"
 fi
